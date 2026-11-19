@@ -146,8 +146,14 @@ if ($Repo) {
     gh secret set VM_HOST -R $Repo -b $fqdn
     gh secret set VM_USER -R $Repo -b "azureuser"
     gh secret set KEY_VAULT_NAME -R $Repo -b $Vault
-    Get-Content -Raw $KeyPath | gh secret set VM_SSH_KEY -R $Repo
-    $knownHosts | gh secret set VM_KNOWN_HOSTS -R $Repo
+    # Windows PowerShell 5.1 tilføjer CRLF, når tekst pipes til et program, og så
+    # passer host key ikke ("Host key verification failed"). cmd.exe's "<" sender
+    # filen byte for byte.
+    cmd /c "gh secret set VM_SSH_KEY -R $Repo < `"$KeyPath`""
+    $khFile = [IO.Path]::GetTempFileName()
+    [IO.File]::WriteAllText($khFile, "$knownHosts`n")
+    cmd /c "gh secret set VM_KNOWN_HOSTS -R $Repo < `"$khFile`""
+    Remove-Item $khFile
     gh variable set DEPLOY_ENABLED -R $Repo -b "true"
 }
 
