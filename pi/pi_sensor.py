@@ -38,12 +38,23 @@ GREEN, ORANGE, RED, BLUE, WHITE, OFF = (0, 160, 0), (255, 120, 0), (200, 0, 0), 
 SIMULATED_CRITICAL_TEMP = 97.5
 
 
+class FakeStick:
+    """Joysticket. Ligger som sense.stick, præcis som i sense_hat-biblioteket."""
+
+    def get_events(self):
+        return []
+
+
 class FakeSenseHat:
-    """Opfører sig som Sense HAT, så programmet kan testes uden Pi."""
+    """Opfører sig som Sense HAT, så programmet kan testes uden Pi.
+
+    Metoderne skal ligge samme sted som i det rigtige bibliotek. Første version havde
+    get_events() på selve objektet, så --fake virkede, mens den rigtige Pi fejlede (19/11).
+    """
 
     def __init__(self):
         self._shake_until = 0.0
-        self.stick = self
+        self.stick = FakeStick()
 
     def get_temperature(self):
         return 34.0 + random.uniform(-0.5, 0.5)
@@ -55,9 +66,6 @@ class FakeSenseHat:
             self._shake_until = now + 3
         amp = 1.2 if now < self._shake_until else 0.004
         return {"x": random.gauss(0, amp), "y": random.gauss(0, amp), "z": 1 + random.gauss(0, amp)}
-
-    def get_events(self):
-        return []
 
     def clear(self, colour=OFF):
         print(f"    LED: {colour}")
@@ -139,6 +147,9 @@ def worst(results):
 
 
 def main():
+    # Som systemd-service er stdout ikke en terminal, og så holder Python linjerne i en buffer.
+    # Uden line_buffering ser journalctl ingen målinger, før bufferen er fuld.
+    sys.stdout.reconfigure(line_buffering=True)
     load_env(os.path.expanduser("~/.alarm-pi.env"))
     p = argparse.ArgumentParser()
     p.add_argument("--fake", action="store_true", help="kør uden Sense HAT")
@@ -165,7 +176,7 @@ def main():
         n += 1
         start = time.time()
         results = []
-        for ev in sense.get_events():
+        for ev in sense.stick.get_events():
             if ev.direction == "middle" and ev.action == "pressed":
                 results.append(send(sense, args, "gearbox_temperature", SIMULATED_CRITICAL_TEMP, "(simuleret)"))
         results.append(send(sense, args, "gearbox_temperature", round(sense.get_temperature(), 1)))
