@@ -1,0 +1,110 @@
+<#
+Opretter produktionsmiljøet i Azure og kobler det til GitHub:
+  1. Resource group
+  2. Key Vault (RBAC) med fem tilfældige secrets
+  3. Ubuntu-VM med managed identity, Docker (cloud-init) og åbne porte 22, 5000 og 8025
+  4. VM'ens identity får "Key Vault Secrets User" (kun læse)
+  5. GitHub Secrets og variablen DEPLOY_ENABLED, så pipelinen kan deploye
+
+Kør efter "az login" og "gh auth login". Det bruger af Azure for Students-kreditten.
+Alt ligger i én resource group og slettes igen med:
+    az group delete -n rg-alarm-service --yes
+
+Eksempel:
+    .\infra\azure-setup.ps1 -Repo dannyhyld/alarm-service
+#>
+param(
+    [string]$Location = "swedencentral",
+    [string]$ResourceGroup = "rg-alarm-service",
+    [string]$VmName = "vm-alarm-service",
+    [string]$VmSize = "Standard_B2s",
+    [string]$Repo = "",
+    [string]$Suffix = ""
+)
+
+$ErrorActionPreference = "Stop"
+
+function Invoke-Az {
+    # Kør et az-kald og stop scriptet, hvis det fejler.
+    & az @args
+    if ($LASTEXITCODE -ne 0) { throw "az $($args -join ' ') fejlede" }
+}
+
+function New-RandomSecret {
+    $bytes = New-Object byte[] 24
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    return [Convert]::ToBase64String($bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=')
+}
+
+if (-not $Suffix) {
+    $Suffix = -join ((97..122) + (48..57) | Get-Random -Count 5 | ForEach-Object { [char]$_ })
+}
+$Vault = "kv-alarm-$Suffix"
+$DnsLabel = "alarm-service-$Suffix"
+$Root = Split-Path $PSScriptRoot -Parent
+$KeyPath = Join-Path $HOME ".ssh\alarm-service-deploy"
+
+Write-Host "== 1. Resource group $ResourceGroup i $Location"
+Invoke-Az group create -n $ResourceGroup -l $Location -o none
+
+Write-Host "== 2. Key Vault $Vault"
+Invoke-Az keyvault create -n $Vault -g $ResourceGroup -l $Location --enable-rbac-authorization true -o none
+$me = az ad signed-in-user show --query id -o tsv
+$vaultId = az keyvault show -n $Vault --query id -o tsv
+Invoke-Az role assignment create --assignee-object-id $me --assignee-principal-type User `
+    --role "Key Vault Secrets Officer" --scope $vaultId -o none
+
+Write-Host "   Gemmer secrets (rettigheder kan tage et par minutter om at slå igennem)"
+foreach ($name in "device-api-key", "operator-api-key", "mysql-password", "mysql-root-password", "mailpit-password") {
+    $value = New-RandomSecret
+    $ok = $false
+    for ($i = 1; $i -le 20; $i++) {
+        az keyvault secret set --vault-name $Vault -n $name --value $value -o none 2>$null
+        if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+        Start-Sleep -Seconds 15
+    }
+    if (-not $ok) { throw "Kunne ikke gemme $name i Key Vault" }
+    Write-Host "   $name gemt"
+}
+
+Write-Host "== 3. SSH-nøgle til deploy ($KeyPath)"
+if (-not (Test-Path $KeyPath)) {
+    ssh-keygen -t ed25519 -f $KeyPath -N '""' -C "alarm-service-deploy" | Out-Null
+}
+
+Write-Host "== 3. VM $VmName ($VmSize, Ubuntu 24.04)"
+Invoke-Az vm create -g $ResourceGroup -n $VmName --image Ubuntu2404 --size $VmSize `
+    --admin-username azureuser --ssh-key-values "$KeyPath.pub" `
+    --assign-identity --public-ip-sku Standard --public-ip-address-dns-name $DnsLabel `
+    --custom-data (Join-Path $Root "infra\cloud-init.yaml") --nsg-rule SSH -o none
+Invoke-Az vm open-port -g $ResourceGroup -n $VmName --port 5000 --priority 1010 -o none
+Invoke-Az vm open-port -g $ResourceGroup -n $VmName --port 8025 --priority 1020 -o none
+
+Write-Host "== 4. VM'ens identity får læseadgang til Key Vault"
+$principal = az vm show -g $ResourceGroup -n $VmName --query identity.principalId -o tsv
+Invoke-Az role assignment create --assignee-object-id $principal --assignee-principal-type ServicePrincipal `
+    --role "Key Vault Secrets User" --scope $vaultId -o none
+
+$fqdn = az vm show -d -g $ResourceGroup -n $VmName --query fqdns -o tsv
+Write-Host "   Venter på, at cloud-init har installeret Docker"
+ssh -i $KeyPath -o StrictHostKeyChecking=accept-new "azureuser@$fqdn" "cloud-init status --wait > /dev/null; docker --version; docker compose version"
+$knownHosts = (ssh-keyscan -t ed25519 $fqdn 2>$null) -join "`n"
+
+if ($Repo) {
+    Write-Host "== 5. GitHub Secrets i $Repo"
+    gh secret set VM_HOST -R $Repo -b $fqdn
+    gh secret set VM_USER -R $Repo -b "azureuser"
+    gh secret set KEY_VAULT_NAME -R $Repo -b $Vault
+    Get-Content -Raw $KeyPath | gh secret set VM_SSH_KEY -R $Repo
+    $knownHosts | gh secret set VM_KNOWN_HOSTS -R $Repo
+    gh variable set DEPLOY_ENABLED -R $Repo -b "true"
+}
+
+Write-Host ""
+Write-Host "Færdig."
+Write-Host "  API:        http://${fqdn}:5000/docs"
+Write-Host "  Mailpit:    http://${fqdn}:8025  (bruger: vagt, adgangskode: secret mailpit-password)"
+Write-Host "  Key Vault:  $Vault"
+Write-Host "  SSH:        ssh -i $KeyPath azureuser@$fqdn"
+Write-Host "Hent enhedens nøgle til Postman med:"
+Write-Host "  az keyvault secret show --vault-name $Vault -n device-api-key --query value -o tsv"

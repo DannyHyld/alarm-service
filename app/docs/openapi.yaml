@@ -1,0 +1,129 @@
+openapi: 3.0.3
+info:
+  title: Alarm-service (Condition Monitoring)
+  version: 1.0.0
+  description: |
+    MVP for Intelligent IoT Solutions A/S. Modtager sensorværdier fra vindmøller,
+    tjekker dem mod tærskler og rejser en alarm med e-mail, når en værdi er for høj.
+
+    Event-flow: SensorValueReceived → threshold-check → AnomalyDetected → AlarmRaised → NotificationSent.
+    En fysisk umulig værdi giver SensorFaultSuspected og ingen alarm.
+
+    Klik **Authorize** og indtast nøglerne. Enheder bruger `DeviceKey`, operatører `OperatorKey`.
+components:
+  securitySchemes:
+    DeviceKey: {type: apiKey, in: header, name: X-API-Key}
+    OperatorKey: {type: apiKey, in: header, name: X-API-Key}
+  schemas:
+    SensorValue:
+      type: object
+      required: [turbine_id, sensor_type, value]
+      properties:
+        turbine_id: {type: string, pattern: '^[A-Za-z0-9_-]{3,40}$', example: WT-017}
+        sensor_type: {type: string, enum: [gearbox_temperature, generator_temperature, vibration], example: gearbox_temperature}
+        value: {type: number, minimum: -1000, maximum: 1000, example: 97.5}
+        timestamp: {type: string, format: date-time, example: '2026-11-20T10:15:00Z'}
+    Alarm:
+      type: object
+      properties:
+        id: {type: integer}
+        turbine_id: {type: string}
+        sensor_type: {type: string}
+        value: {type: number}
+        threshold: {type: number}
+        priority: {type: string, enum: [høj, kritisk]}
+        status: {type: string, enum: [raised, acknowledged]}
+        reason: {type: string}
+        measured_at: {type: string, format: date-time}
+        raised_at: {type: string, format: date-time}
+        response_due_at: {type: string, format: date-time}
+        acknowledged_at: {type: string, format: date-time, nullable: true}
+        acknowledged_by: {type: string, nullable: true}
+    Result:
+      type: object
+      properties:
+        outcome: {type: string, enum: [normal, anomaly, sensor_fault]}
+        reason: {type: string}
+        events: {type: array, items: {type: string}, example: [SensorValueReceived, AnomalyDetected, AlarmRaised, NotificationSent]}
+        alarm: {allOf: [{$ref: '#/components/schemas/Alarm'}], nullable: true}
+    Error:
+      type: object
+      properties:
+        error: {type: string}
+        message: {type: string}
+paths:
+  /sensor-values:
+    post:
+      summary: Command Register Sensor Value (IoT-enheden sender en måling)
+      security: [{DeviceKey: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SensorValue'}
+      responses:
+        '201': {description: Målingen er gemt og vurderet, content: {application/json: {schema: {$ref: '#/components/schemas/Result'}}}}
+        '401': {description: Manglende eller forkert nøgle, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '422': {description: Ugyldigt input, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '429': {description: For mange kald}
+  /alarms:
+    get:
+      summary: Read model Alarmoversigt
+      security: [{OperatorKey: []}]
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [raised, acknowledged]}}
+        - {name: turbine_id, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        '200': {description: Alarmer, nyeste først, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Alarm'}}}}}
+        '401': {description: Manglende eller forkert nøgle}
+  /alarms/{alarm_id}:
+    get:
+      summary: Hent én alarm
+      security: [{OperatorKey: []}]
+      parameters: [{name: alarm_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: Alarmen, content: {application/json: {schema: {$ref: '#/components/schemas/Alarm'}}}}
+        '404': {description: Findes ikke}
+  /alarms/{alarm_id}/acknowledge:
+    patch:
+      summary: Command Acknowledge Alarm (operatøren kvitterer)
+      security: [{OperatorKey: []}]
+      parameters: [{name: alarm_id, in: path, required: true, schema: {type: integer}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [acknowledged_by]
+              properties: {acknowledged_by: {type: string, example: Danny}}
+      responses:
+        '200': {description: Kvitteret, content: {application/json: {schema: {$ref: '#/components/schemas/Alarm'}}}}
+        '404': {description: Findes ikke}
+        '409': {description: Allerede kvitteret}
+  /events:
+    get:
+      summary: Domain events i databasen (nyeste først)
+      security: [{OperatorKey: []}]
+      parameters:
+        - {name: turbine_id, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        '200': {description: Events}
+  /sensor-types:
+    get:
+      summary: Tærskler pr. sensortype
+      responses:
+        '200': {description: Sensortyper og grænser}
+  /health:
+    get:
+      summary: Health check (API og database)
+      responses:
+        '200': {description: OK}
+        '503': {description: Databasen svarer ikke}
+  /metrics:
+    get:
+      summary: Prometheus-metrics til Grafana
+      responses:
+        '200': {description: Metrics i Prometheus-format}

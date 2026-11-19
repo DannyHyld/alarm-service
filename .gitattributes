@@ -1,0 +1,5 @@
+# Shell-scripts og YAML skal have Linux-linjeskift, også når de committes fra Windows
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sql  text eol=lf

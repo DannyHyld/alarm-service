@@ -1,0 +1,57 @@
+# Produktionsmiljø på Azure VM. GitHub Actions (jobbet "deploy") kopierer filen
+# til /opt/alarm-service og kører den. .env skrives af scripts/fetch-secrets.sh
+# ud fra Azure Key Vault, så ingen secrets ligger i repoet eller i GitHub.
+#
+# MySQL er ikke åben udefra. Workbench forbinder via SSH-tunnel til VM'en.
+services:
+  api:
+    image: ${API_IMAGE:?API_IMAGE skal sættes af deploy-jobbet}
+    ports:
+      - "5000:5000"
+    env_file: .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    restart: unless-stopped
+    logging: &logging
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:3306:3306"   # kun lokalt på VM'en (SSH-tunnel fra Workbench)
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--protocol=tcp", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    logging: *logging
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "8025:8025"
+    environment:
+      MP_UI_AUTH: "vagt:${MAILPIT_PASSWORD}"   # web-UI'et kræver login i drift
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  mysql-data:

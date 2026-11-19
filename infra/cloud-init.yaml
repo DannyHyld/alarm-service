@@ -1,0 +1,13 @@
+#cloud-config
+# Kører én gang, når Azure VM'en oprettes: installerer Docker og Compose.
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - curl
+runcmd:
+  - systemctl enable --now docker
+  - usermod -aG docker azureuser
+  - mkdir -p /opt/alarm-service/db
+  - chown -R azureuser:azureuser /opt/alarm-service
