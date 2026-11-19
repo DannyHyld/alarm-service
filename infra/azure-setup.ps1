@@ -1,4 +1,4 @@
-<#
+﻿<#
 Opretter produktionsmiljøet i Azure og kobler det til GitHub:
   1. Resource group
   2. Key Vault (RBAC) med fem tilfældige secrets
@@ -24,7 +24,15 @@ param(
     [string]$Suffix = ""
 )
 
-$ErrorActionPreference = "Stop"
+# "Continue": Windows PowerShell 5.1 gør ellers enhver linje på stderr fra az
+# (også advarsler) til et hårdt stop. Fejl fanges i stedet via exit-koden i Invoke-Az.
+$ErrorActionPreference = "Continue"
+
+function Test-Az {
+    # Returnerer $true, hvis az-kaldet lykkes (bruges til at springe trin over, der allerede er gjort).
+    & az @args -o none 2>$null
+    return ($LASTEXITCODE -eq 0)
+}
 
 function Invoke-Az {
     # Kør et az-kald og stop scriptet, hvis det fejler.
@@ -46,18 +54,39 @@ $DnsLabel = "alarm-service-$Suffix"
 $Root = Split-Path $PSScriptRoot -Parent
 $KeyPath = Join-Path $HOME ".ssh\alarm-service-deploy"
 
+Write-Host "== 0. Registrér de Azure-tjenester, et nyt abonnement ikke har slået til"
+foreach ($ns in "Microsoft.KeyVault", "Microsoft.Compute", "Microsoft.Network") {
+    $state = az provider show --namespace $ns --query registrationState -o tsv
+    if ($state -ne "Registered") {
+        Write-Host "   Registrerer $ns (kan tage et par minutter)"
+        Invoke-Az provider register --namespace $ns --wait -o none
+    } else {
+        Write-Host "   $ns er registreret"
+    }
+}
+
 Write-Host "== 1. Resource group $ResourceGroup i $Location"
 Invoke-Az group create -n $ResourceGroup -l $Location -o none
 
 Write-Host "== 2. Key Vault $Vault"
-Invoke-Az keyvault create -n $Vault -g $ResourceGroup -l $Location --enable-rbac-authorization true -o none
+if (Test-Az keyvault show -n $Vault) {
+    Write-Host "   findes allerede, genbruges"
+} else {
+    Invoke-Az keyvault create -n $Vault -g $ResourceGroup -l $Location --enable-rbac-authorization true -o none
+}
 $me = az ad signed-in-user show --query id -o tsv
 $vaultId = az keyvault show -n $Vault --query id -o tsv
-Invoke-Az role assignment create --assignee-object-id $me --assignee-principal-type User `
-    --role "Key Vault Secrets Officer" --scope $vaultId -o none
+# OBS: ingen parenteser i --query. az er en .cmd-fil, og cmd.exe læser "(" og ")" som kode.
+$har = az role assignment list --assignee $me --role "Key Vault Secrets Officer" --scope $vaultId --query "[].id" -o tsv
+if (-not $har) {
+    Invoke-Az role assignment create --assignee-object-id $me --assignee-principal-type User `
+        --role "Key Vault Secrets Officer" --scope $vaultId -o none
+}
 
 Write-Host "   Gemmer secrets (rettigheder kan tage et par minutter om at slå igennem)"
 foreach ($name in "device-api-key", "operator-api-key", "mysql-password", "mysql-root-password", "mailpit-password") {
+    # En eksisterende secret må ikke overskrives: MySQL er startet med den gamle adgangskode.
+    if (Test-Az keyvault secret show --vault-name $Vault -n $name) { Write-Host "   $name findes allerede"; continue }
     $value = New-RandomSecret
     $ok = $false
     for ($i = 1; $i -le 20; $i++) {
@@ -71,21 +100,30 @@ foreach ($name in "device-api-key", "operator-api-key", "mysql-password", "mysql
 
 Write-Host "== 3. SSH-nøgle til deploy ($KeyPath)"
 if (-not (Test-Path $KeyPath)) {
-    ssh-keygen -t ed25519 -f $KeyPath -N '""' -C "alarm-service-deploy" | Out-Null
+    # Windows PowerShell kan ikke sende en tom adgangskode til ssh-keygen. Lav nøglen i Git Bash:
+    #   ssh-keygen -t ed25519 -f ~/.ssh/alarm-service-deploy -N "" -C alarm-service-deploy
+    throw "Mangler SSH-nøglen $KeyPath. Lav den først (se kommentaren i scriptet)."
 }
 
 Write-Host "== 3. VM $VmName ($VmSize, Ubuntu 24.04)"
+if (Test-Az vm show -g $ResourceGroup -n $VmName) {
+    Write-Host "   findes allerede, genbruges"
+} else {
 Invoke-Az vm create -g $ResourceGroup -n $VmName --image Ubuntu2404 --size $VmSize `
     --admin-username azureuser --ssh-key-values "$KeyPath.pub" `
     --assign-identity --public-ip-sku Standard --public-ip-address-dns-name $DnsLabel `
     --custom-data (Join-Path $Root "infra\cloud-init.yaml") --nsg-rule SSH -o none
+}
 Invoke-Az vm open-port -g $ResourceGroup -n $VmName --port 5000 --priority 1010 -o none
 Invoke-Az vm open-port -g $ResourceGroup -n $VmName --port 8025 --priority 1020 -o none
 
 Write-Host "== 4. VM'ens identity får læseadgang til Key Vault"
 $principal = az vm show -g $ResourceGroup -n $VmName --query identity.principalId -o tsv
-Invoke-Az role assignment create --assignee-object-id $principal --assignee-principal-type ServicePrincipal `
-    --role "Key Vault Secrets User" --scope $vaultId -o none
+$har = az role assignment list --assignee $principal --role "Key Vault Secrets User" --scope $vaultId --query "[].id" -o tsv
+if (-not $har) {
+    Invoke-Az role assignment create --assignee-object-id $principal --assignee-principal-type ServicePrincipal `
+        --role "Key Vault Secrets User" --scope $vaultId -o none
+}
 
 $fqdn = az vm show -d -g $ResourceGroup -n $VmName --query fqdns -o tsv
 Write-Host "   Venter på, at cloud-init har installeret Docker"
@@ -97,7 +135,10 @@ for ($i = 1; $i -le 30; $i++) {
     Start-Sleep -Seconds 10
 }
 if (-not $ready) { throw "VM'en svarer ikke på SSH, eller Docker blev ikke installeret" }
-$knownHosts = (ssh-keyscan -t ed25519 $fqdn 2>$null) -join "`n"
+# Host key fra den SSH-forbindelse, der lige lykkedes. Windows' ssh-keyscan kan ikke
+# forhandle med OpenSSH 9.6 på Ubuntu 24.04 (choose_kex: sntrup761x25519).
+$knownHosts = (Get-Content (Join-Path $HOME ".ssh\known_hosts") |
+    Where-Object { $_ -like "$fqdn ssh-ed25519 *" } | Select-Object -First 1)
 if (-not $knownHosts) { throw "Kunne ikke hente VM'ens host key" }
 
 if ($Repo) {
