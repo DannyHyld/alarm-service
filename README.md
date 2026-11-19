@@ -68,6 +68,31 @@ GitHub Secrets indeholder kun det, pipelinen skal bruge for at nå VM'en: SSH-n�
 
 Nøglen sendes i headeren `X-API-Key`. Enheder og operatører har hver sin nøgle, så en kompromitteret mølle ikke kan læse eller kvittere alarmer.
 
+## Postman
+
+Mappen `postman/` har en collection med hele forløbet og to miljøer, `lokal` og `produktion`.
+
+1. Importér de tre JSON-filer i Postman (Import → vælg filerne).
+2. Vælg miljøet øverst til højre, og udfyld `device_key`, `operator_key` og (i produktion) `mailpit_password`. Lokalt står værdierne i `.env`. I produktion henter du dem fra Key Vault:
+   ```bash
+   az keyvault secret show --vault-name kv-alarm-uj0vm -n device-api-key --query value -o tsv
+   ```
+3. Kør request 0-8 i rækkefølge, eller kør hele collectionen med **Run**.
+
+| # | Request | Viser |
+|---|---|---|
+| 0 | Health check | API og database kører |
+| 1 | Normal måling | Ingen alarm |
+| 2 | Anomali | AnomalyDetected, AlarmRaised og NotificationSent |
+| 3 | Sensorfejl | SensorFaultSuspected, ingen alarm |
+| 4 | Alarmoversigt | Alarmen er åben |
+| 5 | Mailpit | Mailen om alarmen |
+| 6-7 | Kvittér to gange | 200, derefter 409 |
+| 8 | Events | Hele forløbet er gemt i MySQL |
+| 9-12 | Sikkerhed | 401 uden nøgle, 422 ved angreb |
+
+Nøglerne står ikke i filerne. `postman/lav_postman.py` bygger filerne, og `node postman/run_collection.mjs lokal` kører collectionen uden Postman.
+
 ## Sikkerhed
 
 - Input valideres. Et forkert `turbine_id`, en ukendt sensortype eller en værdi uden for -1000 til 1000 giver 422.

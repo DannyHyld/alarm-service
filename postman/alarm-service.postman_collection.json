@@ -1,0 +1,625 @@
+{
+  "info": {
+    "_postman_id": "cdf458d8-8ec3-5e97-9572-d289f915a9d7",
+    "name": "Alarm-service (Delopgave 2)",
+    "description": "Hele forløbet til videoen: sensorværdi sendes, anomali registreres, alarm gemmes, mail sendes, alarmen kvitteres, og events kan ses i databasen. Vælg miljøet 'lokal' eller 'produktion' øverst til højre, og kør mappen med Run.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Health check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Databasen svarer\", () => pm.expect(pm.response.json().database).to.eql(\"ok\"));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Viser, at API'et kører og kan nå MySQL. Kræver ingen nøgle."
+      }
+    },
+    {
+      "name": "1. Normal måling (64 °C)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+              "const b = pm.response.json();",
+              "pm.test(\"Vurderet som normal\", () => pm.expect(b.outcome).to.eql(\"normal\"));",
+              "pm.test(\"Ingen alarm\", () => pm.expect(b.alarm).to.be.null);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{device_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/sensor-values",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "sensor-values"
+          ]
+        },
+        "description": "Command Register Sensor Value. Værdien er under grænsen, så der kommer kun SensorValueReceived.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"turbine_id\": \"{{turbine_id}}\",\n  \"sensor_type\": \"gearbox_temperature\",\n  \"value\": 64.0\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "2. Anomali (97,5 °C) rejser alarm",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+              "const b = pm.response.json();",
+              "pm.test(\"Vurderet som anomali\", () => pm.expect(b.outcome).to.eql(\"anomaly\"));",
+              "pm.test(\"Hele event-flowet\", () => pm.expect(b.events).to.eql(",
+              "  [\"SensorValueReceived\", \"AnomalyDetected\", \"AlarmRaised\", \"NotificationSent\"]));",
+              "pm.test(\"Prioritet kritisk med svarfrist\", () => {",
+              "  pm.expect(b.alarm.priority).to.eql(\"kritisk\");",
+              "  pm.expect(b.alarm.response_due_at).to.be.a(\"string\");",
+              "});",
+              "pm.collectionVariables.set(\"alarm_id\", b.alarm.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{device_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/sensor-values",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "sensor-values"
+          ]
+        },
+        "description": "Over den kritiske grænse på 95 °C. Flowet: SensorValueReceived → AnomalyDetected → AlarmRaised → NotificationSent. Alarmens id gemmes til de næste kald.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"turbine_id\": \"{{turbine_id}}\",\n  \"sensor_type\": \"gearbox_temperature\",\n  \"value\": 97.5\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "3. Sensorfejl (-60 °C) giver ingen alarm",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+              "const b = pm.response.json();",
+              "pm.test(\"Vurderet som sensorfejl\", () => pm.expect(b.outcome).to.eql(\"sensor_fault\"));",
+              "pm.test(\"SensorFaultSuspected og ingen alarm\", () => {",
+              "  pm.expect(b.events).to.include(\"SensorFaultSuspected\");",
+              "  pm.expect(b.alarm).to.be.null;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{device_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/sensor-values",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "sensor-values"
+          ]
+        },
+        "description": "Hot spottet fra Delopgave 1 som regel: en fysisk umulig værdi er en sensorfejl, ikke en anomali.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"turbine_id\": \"{{turbine_id}}\",\n  \"sensor_type\": \"gearbox_temperature\",\n  \"value\": -60.0\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "4. Alarmoversigt (åbne alarmer)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Alarmen fra trin 2 er åben\", () => {",
+              "  const ids = pm.response.json().map(a => a.id);",
+              "  pm.expect(ids).to.include(pm.collectionVariables.get(\"alarm_id\"));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{operator_key}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/alarms?status=raised",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "alarms"
+          ],
+          "query": [
+            {
+              "key": "status",
+              "value": "raised"
+            }
+          ]
+        },
+        "description": "Read model Alarmoversigt. Kræver operatørens nøgle."
+      }
+    },
+    {
+      "name": "5. Se mailen i Mailpit",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Mail om alarmen findes\", () => {",
+              "  const subjects = pm.response.json().messages.map(m => m.Subject);",
+              "  const id = pm.collectionVariables.get(\"alarm_id\");",
+              "  pm.expect(subjects.some(s => s.includes(`Alarm ${id}:`))).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{mailpit_url}}/api/v1/messages",
+          "host": [
+            "{{mailpit_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "messages"
+          ]
+        },
+        "description": "Notifikationen: mailen, som API'et sendte, da alarmen blev rejst. I produktion kræver Mailpit login (bruger vagt, adgangskode fra Key Vault).",
+        "auth": {
+          "type": "basic",
+          "basic": [
+            {
+              "key": "username",
+              "value": "{{mailpit_user}}",
+              "type": "string"
+            },
+            {
+              "key": "password",
+              "value": "{{mailpit_password}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "6. Kvittér alarmen",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Status er acknowledged\", () => pm.expect(pm.response.json().status).to.eql(\"acknowledged\"));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{operator_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/alarms/{{alarm_id}}/acknowledge",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "alarms",
+            "{{alarm_id}}",
+            "acknowledge"
+          ]
+        },
+        "description": "Command Acknowledge Alarm. Giver eventen AlarmAcknowledged.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"acknowledged_by\": \"Danny\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "7. Kvittér igen giver 409",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"409 Conflict\", () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{operator_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/alarms/{{alarm_id}}/acknowledge",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "alarms",
+            "{{alarm_id}}",
+            "acknowledge"
+          ]
+        },
+        "description": "Domæneregel: en alarm kan kun kvitteres én gang.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"acknowledged_by\": \"Danny\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "8. Domain events i databasen",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Hele forløbet er gemt\", () => {",
+              "  const t = pm.response.json().map(e => e.event_type);",
+              "  [\"AlarmAcknowledged\", \"AlarmRaised\", \"AnomalyDetected\", \"SensorFaultSuspected\"]",
+              "    .forEach(e => pm.expect(t).to.include(e));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{operator_key}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/events?limit=10",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "events"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "De events, flowet har gemt i MySQL, nyeste først."
+      }
+    },
+    {
+      "name": "Sikkerhed",
+      "item": [
+        {
+          "name": "9. Uden nøgle giver 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 Unauthorized\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sensor-values",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "sensor-values"
+              ]
+            },
+            "description": "Uden X-API-Key kan ingen sende falske målinger.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turbine_id\": \"{{turbine_id}}\",\n  \"sensor_type\": \"gearbox_temperature\",\n  \"value\": 64.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "10. Enhedens nøgle må ikke læse alarmer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 Unauthorized\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{device_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/alarms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "alarms"
+              ]
+            },
+            "description": "En mølle må sende målinger, men ikke læse eller kvittere alarmer."
+          }
+        },
+        {
+          "name": "11. SQL injection giver 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422 afvist\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{device_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sensor-values",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "sensor-values"
+              ]
+            },
+            "description": "Angreb 1 fra Hands-on 1. Inputvalidering afviser værdien, og SQL'en bruger pladsholdere.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turbine_id\": \"x' OR '1'='1\",\n  \"sensor_type\": \"vibration\",\n  \"value\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "12. Ugyldige data giver 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422 afvist\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{device_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sensor-values",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "sensor-values"
+              ]
+            },
+            "description": "Angreb 2 fra Hands-on 1.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turbine_id\": \"<script>alert(1)</script>\",\n  \"sensor_type\": \"vibration\",\n  \"value\": -9999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "alarm_id",
+      "value": ""
+    }
+  ]
+}
