@@ -11,8 +11,26 @@ from datetime import datetime, timezone
 import pymysql
 from pymysql.cursors import DictCursor
 
-ALARM_COLUMNS = ("id, turbine_id, sensor_type, value, threshold, priority, status, reason, "
-                 "measured_at, raised_at, response_due_at, acknowledged_at, acknowledged_by")
+# Al SQL er fast tekst. Ingen f-strings eller sammensætning, så Bandit (B608)
+# og læseren kan se, at kun værdier, aldrig kode, kommer udefra.
+SELECT_ALARM_BY_ID = (
+    "SELECT id, turbine_id, sensor_type, value, threshold, priority, status, reason, "
+    "measured_at, raised_at, response_due_at, acknowledged_at, acknowledged_by "
+    "FROM alarms WHERE id = %s"
+)
+# Valgfrie filtre: (%s IS NULL OR kolonne = %s) gør filteret til en no-op, når værdien er None.
+SELECT_ALARMS = (
+    "SELECT id, turbine_id, sensor_type, value, threshold, priority, status, reason, "
+    "measured_at, raised_at, response_due_at, acknowledged_at, acknowledged_by "
+    "FROM alarms "
+    "WHERE (%s IS NULL OR status = %s) AND (%s IS NULL OR turbine_id = %s) "
+    "ORDER BY id DESC LIMIT %s"
+)
+SELECT_EVENTS = (
+    "SELECT id, event_type, turbine_id, payload, occurred_at FROM events "
+    "WHERE (%s IS NULL OR turbine_id = %s) "
+    "ORDER BY id DESC LIMIT %s"
+)
 
 
 def _naive_utc(dt: datetime | None) -> datetime | None:
@@ -57,22 +75,14 @@ class MySqlRepository:
 
     def get_alarm(self, alarm_id: int) -> dict | None:
         with self._conn() as con, con.cursor() as cur:
-            cur.execute(f"SELECT {ALARM_COLUMNS} FROM alarms WHERE id = %s", (alarm_id,))
+            cur.execute(SELECT_ALARM_BY_ID, (alarm_id,))
             return cur.fetchone()
 
     def list_alarms(self, status: str | None = None, turbine_id: str | None = None, limit: int = 100) -> list[dict]:
-        sql = f"SELECT {ALARM_COLUMNS} FROM alarms WHERE 1=1"
-        args: list = []
-        if status:
-            sql += " AND status = %s"
-            args.append(status)
-        if turbine_id:
-            sql += " AND turbine_id = %s"
-            args.append(turbine_id)
-        sql += " ORDER BY id DESC LIMIT %s"
-        args.append(limit)
+        status = status or None
+        turbine_id = turbine_id or None
         with self._conn() as con, con.cursor() as cur:
-            cur.execute(sql, args)
+            cur.execute(SELECT_ALARMS, (status, status, turbine_id, turbine_id, limit))
             return list(cur.fetchall())
 
     def acknowledge_alarm(self, alarm_id: int, by: str, at: datetime) -> bool:
@@ -85,15 +95,9 @@ class MySqlRepository:
             return cur.rowcount == 1
 
     def list_events(self, turbine_id: str | None = None, limit: int = 100) -> list[dict]:
-        sql = "SELECT id, event_type, turbine_id, payload, occurred_at FROM events"
-        args: list = []
-        if turbine_id:
-            sql += " WHERE turbine_id = %s"
-            args.append(turbine_id)
-        sql += " ORDER BY id DESC LIMIT %s"
-        args.append(limit)
+        turbine_id = turbine_id or None
         with self._conn() as con, con.cursor() as cur:
-            cur.execute(sql, args)
+            cur.execute(SELECT_EVENTS, (turbine_id, turbine_id, limit))
             rows = list(cur.fetchall())
         for r in rows:
             if isinstance(r["payload"], (str, bytes)):
