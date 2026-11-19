@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Horns Rev 1 · vindmølle-dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="park">
+      <b>Horns Rev 1</b>
+      <span>80 × Vestas V80 · 160 MW · Nordsøen ud for Blåvandshuk</span>
+    </div>
+    <div id="title">Vejret</div>
+    <div class="now">
+      <div><small>Vind lige nu</small><strong id="nowWind">…</strong></div>
+      <div><small>Strømpris DK1</small><strong id="nowPrice">…</strong></div>
+      <div><small id="nowDate">…</small><strong id="clock">--:--</strong></div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 1 Vejret -->
+    <section class="screen" id="s1" data-title="Vejret">
+      <p class="lead">Vinden i 80 meters højde, hvor rotoren sidder. Fire vejrmodeller og MET Norway giver hver deres svar.</p>
+      <div class="cards" id="wcards"></div>
+      <div class="panel spread" id="spread"></div>
+    </section>
+
+    <!-- 2 Parken i realtid -->
+    <section class="screen" id="s2" data-title="Parken i realtid">
+      <div class="panel" id="park"></div>
+      <div class="panel" id="parkSide"></div>
+    </section>
+
+    <!-- 3 Beregneren -->
+    <section class="screen" id="s3" data-title="Beregneren">
+      <div class="panel" id="calcStart"></div>
+      <div class="panel" id="calcYaw"></div>
+    </section>
+
+    <!-- 4 Strømpris og regnskab -->
+    <section class="screen" id="s4" data-title="Strømpris og regnskab">
+      <div class="panel" id="priceChart"></div>
+      <div class="stats" id="ledger"></div>
+    </section>
+
+    <!-- 5 Alarmcentralen -->
+    <section class="screen" id="s5" data-title="Alarmcentralen">
+      <div class="panel flow" id="flow"></div>
+      <div class="panel" id="openAlarms"></div>
+      <div class="panel" id="feedPanel"></div>
+    </section>
+
+    <!-- 6 Serviceprognose -->
+    <section class="screen" id="s6" data-title="Serviceprognose">
+      <p class="lead" id="progLead"></p>
+      <div class="panel" id="prognosis"></div>
+      <p class="note">Simuleret gearkassetemperatur for parkens 80 møller. Alarm-servicen opdager i dag fejl, når de sker. Prognosen viser næste skridt: at forudsige dem (Predictive Condition Mgmt. fra Delopgave 1).</p>
+    </section>
+  </main>
+
+  <footer>
+    <div id="dots"></div>
+    <div id="progress"><i></i></div>
+    <div id="sources">Open-Meteo · MET Norway · Energi Data Service · alarm-service i Azure</div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

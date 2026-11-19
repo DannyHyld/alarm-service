@@ -113,6 +113,12 @@ Mappen `postman/` har en collection med hele forløbet og to miljøer, `lokal` o
 
 Nøglerne står ikke i filerne. `postman/lav_postman.py` bygger filerne, og `node postman/run_collection.mjs lokal` kører collectionen uden Postman.
 
+## Raspberry Pi og dashboard
+
+En Raspberry Pi 4 med Sense HAT er den rigtige IoT-enhed. `pi/pi_sensor.py` sender temperatur og vibration til API'et hvert 5. sekund som mølle `WT-PI` og viser svaret på LED'erne: grøn normal, orange høj, rød kritisk, blå sensorfejl. Joysticket trykket ind sender en simuleret kritisk gearkassetemperatur. Opsætningen står i [pi/README.md](pi/README.md).
+
+Pi'en kører også et dashboard med seks skærmbilleder for Horns Rev 1: vejret, parken i realtid, en beregner for start og krøjning, strømpris og regnskab, alarmcentralen og en serviceprognose. Se [dashboard/README.md](dashboard/README.md).
+
 ## Sikkerhed
 
 - Input valideres. Et forkert `turbine_id`, en ukendt sensortype eller en værdi uden for -1000 til 1000 giver 422.
@@ -132,7 +138,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) kører ved hvert push og pull request: secret scanning med detect-secrets, SAST med Bandit, unit tests med pytest og build af Docker-imaget. På `main` bliver imaget skubbet til GitHub Container Registry.
+GitHub Actions (`.github/workflows/ci.yml`) kører ved hvert push og pull request: secret scanning med detect-secrets, SAST med Bandit på `app/`, `pi/` og `dashboard/`, unit tests og en integrationstest mod MySQL og build af Docker-imaget. På `main` bliver imaget skubbet til GitHub Container Registry og deployet til Azure VM'en, hvorefter pipelinen tjekker `/health`.
 
 Bandit virker ikke med Python 3.14 endnu. Pipelinen kører Python 3.12.
 
@@ -145,5 +151,11 @@ app/repository.py   MySQL (drift) og hukommelse (tests)
 app/notifier.py     e-mail via SMTP
 app/__init__.py     Flask: endpoints, nøgler, logging, fejl
 db/init.sql         tabellerne events og alarms
+db/migrations/      ændringer af skemaet i en kørende database
 simulator.py        spiller IoT-enhed
+pi/                 Raspberry Pi med Sense HAT som IoT-enhed
+dashboard/          seks skærmbilleder for Horns Rev 1 på Pi'en
+monitoring/         Prometheus og Grafana
+infra/              opsætning af Azure (VM, Key Vault, cloud-init)
+postman/            collection og miljøer til Postman
 ```
