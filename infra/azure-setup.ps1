@@ -14,7 +14,9 @@ Eksempel:
     .\infra\azure-setup.ps1 -Repo dannyhyld/alarm-service
 #>
 param(
-    [string]$Location = "swedencentral",
+    # Skolens Azure-politik tillader kun: belgiumcentral, denmarkeast, germanywestcentral,
+    # norwayeast og switzerlandnorth. Denmark East holder data i Danmark.
+    [string]$Location = "denmarkeast",
     [string]$ResourceGroup = "rg-alarm-service",
     [string]$VmName = "vm-alarm-service",
     [string]$VmSize = "Standard_B2s",
@@ -87,8 +89,16 @@ Invoke-Az role assignment create --assignee-object-id $principal --assignee-prin
 
 $fqdn = az vm show -d -g $ResourceGroup -n $VmName --query fqdns -o tsv
 Write-Host "   Venter på, at cloud-init har installeret Docker"
-ssh -i $KeyPath -o StrictHostKeyChecking=accept-new "azureuser@$fqdn" "cloud-init status --wait > /dev/null; docker --version; docker compose version"
+$ready = $false
+for ($i = 1; $i -le 30; $i++) {
+    ssh -i $KeyPath -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "azureuser@$fqdn" `
+        "cloud-init status --wait > /dev/null; docker --version && docker compose version"
+    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    Start-Sleep -Seconds 10
+}
+if (-not $ready) { throw "VM'en svarer ikke på SSH, eller Docker blev ikke installeret" }
 $knownHosts = (ssh-keyscan -t ed25519 $fqdn 2>$null) -join "`n"
+if (-not $knownHosts) { throw "Kunne ikke hente VM'ens host key" }
 
 if ($Repo) {
     Write-Host "== 5. GitHub Secrets i $Repo"
