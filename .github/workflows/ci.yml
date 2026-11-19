@@ -26,7 +26,7 @@ jobs:
           python -c "import json,sys; r=json.load(open('scan.json'))['results']; print(json.dumps(r, indent=2)); sys.exit(1 if r else 0)"
 
   test:
-    name: SAST og unit tests
+    name: SAST, unit tests og integrationstest
     needs: secret-scan
     runs-on: ubuntu-latest
     steps:
@@ -36,7 +36,21 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: SAST med Bandit
         run: bandit -r app -ll
-      - name: Unit tests
+      - name: Start MySQL med db/init.sql (samme compose-fil som udvikling)
+        run: |
+          # Engangs-adgangskoder kun til denne kørsel
+          PW=$(openssl rand -hex 16); ROOT=$(openssl rand -hex 16)
+          echo "::add-mask::$PW"; echo "::add-mask::$ROOT"
+          printf 'MYSQL_DATABASE=alarm_service\nMYSQL_USER=alarm_app\nMYSQL_PASSWORD=%s\nMYSQL_ROOT_PASSWORD=%s\nGRAFANA_ADMIN_PASSWORD=%s\n' "$PW" "$ROOT" "$ROOT" > .env
+          docker compose up -d --wait mysql
+          {
+            echo "MYSQL_TEST_HOST=127.0.0.1"
+            echo "MYSQL_TEST_PORT=3307"
+            echo "MYSQL_TEST_USER=alarm_app"
+            echo "MYSQL_TEST_PASSWORD=$PW"
+            echo "MYSQL_TEST_DATABASE=alarm_service"
+          } >> "$GITHUB_ENV"
+      - name: Unit tests og integrationstest mod MySQL
         run: pytest -v
 
   build:

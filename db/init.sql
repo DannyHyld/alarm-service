@@ -1,6 +1,11 @@
 -- Skema for alarm-servicen (Condition Monitoring).
 -- MySQL kører filen automatisk første gang containeren starter.
 
+-- Uden denne linje læser MySQL's init-klient filen som latin1, og ENUM-værdien
+-- 'høj' bliver gemt som 'hÃ¸j'. Så fejler hver alarm med prioritet høj
+-- ("Data truncated for column 'priority'"). Fundet 19/11, se db/migrations/.
+SET NAMES utf8mb4;
+
 CREATE TABLE IF NOT EXISTS events (
     id           BIGINT AUTO_INCREMENT PRIMARY KEY,
     event_type   VARCHAR(40)  NOT NULL,   -- SensorValueReceived, AnomalyDetected, AlarmRaised ...
