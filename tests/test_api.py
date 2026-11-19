@@ -4,14 +4,18 @@ from app import create_app
 from app.notifier import RecordingNotifier
 from app.repository import InMemoryRepository
 
-DEVICE = {"X-API-Key": "device-test-key"}
-OPERATOR = {"X-API-Key": "operator-test-key"}
+# Falske nøgler, der kun findes i testene. Secret scanning (detect-secrets)
+# fangede dem i første pipeline-kørsel; de er bevidst markeret som tilladte.
+DEVICE_KEY = "device-test-key"  # pragma: allowlist secret
+OPERATOR_KEY = "operator-test-key"  # pragma: allowlist secret
+DEVICE = {"X-API-Key": DEVICE_KEY}
+OPERATOR = {"X-API-Key": OPERATOR_KEY}
 
 
 def make(fail_mail=False):
     repo, notifier = InMemoryRepository(), RecordingNotifier(fail=fail_mail)
     app = create_app(repo=repo, notifier=notifier, config={
-        "DEVICE_API_KEY": "device-test-key", "OPERATOR_API_KEY": "operator-test-key", "TESTING": True})
+        "DEVICE_API_KEY": DEVICE_KEY, "OPERATOR_API_KEY": OPERATOR_KEY, "TESTING": True})
     return app.test_client(), repo, notifier
 
 
