@@ -1,0 +1,11 @@
+# Grafana indlæser dashboards fra mappen ved opstart. Ret i JSON-filen i repoet,
+# ikke i Grafana, ellers forsvinder ændringen ved næste deploy.
+apiVersion: 1
+providers:
+  - name: alarm-service
+    folder: Condition Monitoring
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

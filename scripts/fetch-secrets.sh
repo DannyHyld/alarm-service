@@ -28,6 +28,7 @@ trap 'rm -f "$TMP"' EXIT
   echo "MYSQL_PASSWORD=$(get_secret mysql-password)"
   echo "MYSQL_ROOT_PASSWORD=$(get_secret mysql-root-password)"
   echo "MAILPIT_PASSWORD=$(get_secret mailpit-password)"
+  echo "GRAFANA_ADMIN_PASSWORD=$(get_secret grafana-admin-password)"
   # Ikke-hemmelig konfiguration
   echo "MYSQL_DATABASE=alarm_service"
   echo "MYSQL_USER=alarm_app"

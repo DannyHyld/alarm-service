@@ -153,3 +153,19 @@ def test_json_log_includes_traceback():
         rec = logging.LogRecord("x", logging.ERROR, "f", 1, "Uventet fejl", None, sys.exc_info())
     out = JsonFormatter().format(rec)
     assert "ValueError: testfejl" in out
+
+
+def test_metrics_show_open_alarms_and_sensor_values(client):
+    c, _, _ = client
+    send(c, 97.5)                               # kritisk alarm
+    send(c, 8.0, sensor_type="vibration")       # høj alarm
+    send(c, -60)                                # sensorfejl: må ikke blive en målt værdi
+    text = c.get("/metrics").data.decode("utf-8")
+    assert 'alarms_open{priority="kritisk"} 1.0' in text
+    assert 'alarms_open{priority="høj"} 1.0' in text
+    assert 'sensor_value{sensor_type="gearbox_temperature",turbine_id="WT-017"} 97.5' in text
+
+    alarm_id = c.get("/alarms?status=raised", headers=OPERATOR).get_json()[0]["id"]
+    c.patch(f"/alarms/{alarm_id}/acknowledge", headers=OPERATOR, json={"acknowledged_by": "Danny"})
+    text = c.get("/metrics").data.decode("utf-8")
+    assert text.count("alarms_open{") == 2 and "} 0.0" in text

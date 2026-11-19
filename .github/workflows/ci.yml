@@ -100,6 +100,7 @@ jobs:
         run: |
           scp -i ~/.ssh/deploy_key docker-compose.remote.yml scripts/fetch-secrets.sh "$VM_USER@$VM_HOST:/opt/alarm-service/"
           scp -i ~/.ssh/deploy_key db/init.sql "$VM_USER@$VM_HOST:/opt/alarm-service/db/"
+          scp -r -i ~/.ssh/deploy_key monitoring "$VM_USER@$VM_HOST:/opt/alarm-service/"
       - name: Log VM'en ind på GHCR (token sendes via stdin)
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
