@@ -14,7 +14,8 @@ import pymysql
 from flask import Flask, g, jsonify, request, send_from_directory
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Gauge, Histogram, generate_latest
+from prometheus_client.core import GaugeMetricFamily
 from werkzeug.exceptions import HTTPException
 
 from . import service
@@ -26,6 +27,33 @@ SENSOR_VALUES = Counter("sensor_values_total", "Modtagne sensorværdier", ["outc
 ALARMS_RAISED = Counter("alarms_raised_total", "Rejste alarmer", ["priority"])
 NOTIFICATIONS = Counter("notifications_total", "Notifikationer", ["result"])
 REQUEST_SECONDS = Histogram("http_request_seconds", "Svartid", ["method", "endpoint", "status"])
+SENSOR_VALUE = Gauge("sensor_value", "Seneste sensorværdi pr. mølle og sensortype", ["turbine_id", "sensor_type"])
+
+
+class OpenAlarmsCollector:
+    """alarms_open{priority}: antal ukvitterede alarmer, talt i databasen ved hver scrape.
+
+    Tælleren alarms_raised_total nulstilles, når API'et genstarter. Antallet af
+    åbne alarmer står i databasen og overlever genstarter, så det er det tal,
+    vagten skal se på dashboardet.
+    """
+
+    repo = None
+
+    def collect(self):
+        family = GaugeMetricFamily("alarms_open", "Åbne (ukvitterede) alarmer", labels=["priority"])
+        if self.repo is not None:
+            try:
+                counts = self.repo.count_open_alarms()
+                for priority in ("høj", "kritisk"):
+                    family.add_metric([priority], counts.get(priority, 0))
+            except Exception as exc:  # noqa: BLE001 - en scrape må aldrig vælte API'et
+                log.warning("alarms_open kunne ikke tælles: %s", type(exc).__name__)
+        yield family
+
+
+OPEN_ALARMS = OpenAlarmsCollector()
+REGISTRY.register(OPEN_ALARMS)
 
 
 class JsonFormatter(logging.Formatter):
@@ -92,6 +120,7 @@ def create_app(repo=None, notifier=None, config: dict | None = None) -> Flask:
         app.config.update(config)
 
     app.extensions["repo"] = repo if repo is not None else _build_repo()
+    OPEN_ALARMS.repo = app.extensions["repo"]
     app.extensions["notifier"] = notifier if notifier is not None else _build_notifier()
     limiter = Limiter(get_remote_address, app=app, default_limits=[app.config["RATELIMIT_DEFAULT"]])
 
@@ -191,6 +220,8 @@ def create_app(repo=None, notifier=None, config: dict | None = None) -> Flask:
         reading = SensorValue.from_dict(request.get_json(silent=True))
         result = service.register_sensor_value(reading, repo_(), app.extensions["notifier"])
         SENSOR_VALUES.labels(result["outcome"]).inc()
+        if result["outcome"] != "sensor_fault":  # en umulig værdi skal ikke tegnes som en måling
+            SENSOR_VALUE.labels(reading.turbine_id, reading.sensor_type).set(reading.value)
         if result["alarm"]:
             ALARMS_RAISED.labels(result["alarm"]["priority"]).inc()
             NOTIFICATIONS.labels("sent" if "NotificationSent" in result["events"] else "failed").inc()

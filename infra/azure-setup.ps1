@@ -84,7 +84,7 @@ if (-not $har) {
 }
 
 Write-Host "   Gemmer secrets (rettigheder kan tage et par minutter om at slå igennem)"
-foreach ($name in "device-api-key", "operator-api-key", "mysql-password", "mysql-root-password", "mailpit-password") {
+foreach ($name in "device-api-key", "operator-api-key", "mysql-password", "mysql-root-password", "mailpit-password", "grafana-admin-password") {
     # En eksisterende secret må ikke overskrives: MySQL er startet med den gamle adgangskode.
     if (Test-Az keyvault secret show --vault-name $Vault -n $name) { Write-Host "   $name findes allerede"; continue }
     $value = New-RandomSecret
@@ -116,6 +116,7 @@ Invoke-Az vm create -g $ResourceGroup -n $VmName --image Ubuntu2404 --size $VmSi
 }
 Invoke-Az vm open-port -g $ResourceGroup -n $VmName --port 5000 --priority 1010 -o none
 Invoke-Az vm open-port -g $ResourceGroup -n $VmName --port 8025 --priority 1020 -o none
+Invoke-Az vm open-port -g $ResourceGroup -n $VmName --port 3000 --priority 1030 -o none
 
 Write-Host "== 4. VM'ens identity får læseadgang til Key Vault"
 $principal = az vm show -g $ResourceGroup -n $VmName --query identity.principalId -o tsv
@@ -161,6 +162,7 @@ Write-Host ""
 Write-Host "Færdig."
 Write-Host "  API:        http://${fqdn}:5000/docs"
 Write-Host "  Mailpit:    http://${fqdn}:8025  (bruger: vagt, adgangskode: secret mailpit-password)"
+Write-Host "  Grafana:    http://${fqdn}:3000  (bruger: admin, adgangskode: secret grafana-admin-password)"
 Write-Host "  Key Vault:  $Vault"
 Write-Host "  SSH:        ssh -i $KeyPath azureuser@$fqdn"
 Write-Host "Hent enhedens nøgle til Postman med:"

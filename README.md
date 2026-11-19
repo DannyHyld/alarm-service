@@ -68,6 +68,26 @@ GitHub Secrets indeholder kun det, pipelinen skal bruge for at nå VM'en: SSH-n�
 
 Nøglen sendes i headeren `X-API-Key`. Enheder og operatører har hver sin nøgle, så en kompromitteret mølle ikke kan læse eller kvittere alarmer.
 
+## Overvågning med Grafana
+
+Prometheus henter `/metrics` fra API'et hvert 15. sekund, og Grafana viser dashboardet "Alarm-service: Condition Monitoring". Datakilde og dashboard oprettes automatisk ud fra filerne i `monitoring/`. Ret i JSON-filen i repoet, ikke i Grafana.
+
+| Panel | Metric |
+|---|---|
+| API oppe/nede | `up{job="alarm-service"}` |
+| Åbne alarmer, kritisk og høj | `alarms_open{priority}`, talt i MySQL ved hver scrape |
+| Alarmer rejst og fejlede mails seneste time | `alarms_raised_total`, `notifications_total{result="failed"}` |
+| Gearkassetemperatur og vibration pr. mølle med grænser | `sensor_value{turbine_id,sensor_type}` |
+| Målinger pr. minut efter vurdering | `sensor_values_total{outcome}` |
+| Svartid p95 og HTTP-status | `http_request_seconds` |
+
+| Miljø | Adresse | Login |
+|---|---|---|
+| Lokalt | http://localhost:3000 | `admin`, adgangskode i `.env` |
+| Produktion | `http://<vm>:3000` | `admin`, adgangskode i Key Vault (`grafana-admin-password`) |
+
+Prometheus er kun åben på VM'en selv. API'et kører med én proces og fire tråde, så tællerne i `/metrics` er ét samlet tal.
+
 ## Postman
 
 Mappen `postman/` har en collection med hele forløbet og to miljøer, `lokal` og `produktion`.

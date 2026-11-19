@@ -26,6 +26,7 @@ SELECT_ALARMS = (
     "WHERE (%s IS NULL OR status = %s) AND (%s IS NULL OR turbine_id = %s) "
     "ORDER BY id DESC LIMIT %s"
 )
+COUNT_OPEN_ALARMS = "SELECT priority, COUNT(*) AS n FROM alarms WHERE status = 'raised' GROUP BY priority"
 SELECT_EVENTS = (
     "SELECT id, event_type, turbine_id, payload, occurred_at FROM events "
     "WHERE (%s IS NULL OR turbine_id = %s) "
@@ -85,6 +86,11 @@ class MySqlRepository:
             cur.execute(SELECT_ALARMS, (status, status, turbine_id, turbine_id, limit))
             return list(cur.fetchall())
 
+    def count_open_alarms(self) -> dict[str, int]:
+        with self._conn() as con, con.cursor() as cur:
+            cur.execute(COUNT_OPEN_ALARMS)
+            return {r["priority"]: r["n"] for r in cur.fetchall()}
+
     def acknowledge_alarm(self, alarm_id: int, by: str, at: datetime) -> bool:
         with self._conn() as con, con.cursor() as cur:
             cur.execute(
@@ -138,6 +144,13 @@ class InMemoryRepository:
         rows = [dict(a) for a in reversed(list(self.alarms.values()))
                 if (not status or a["status"] == status) and (not turbine_id or a["turbine_id"] == turbine_id)]
         return rows[:limit]
+
+    def count_open_alarms(self):
+        counts = {}
+        for a in self.alarms.values():
+            if a["status"] == "raised":
+                counts[a["priority"]] = counts.get(a["priority"], 0) + 1
+        return counts
 
     def acknowledge_alarm(self, alarm_id, by, at):
         with self._lock:
