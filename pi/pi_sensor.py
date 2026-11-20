@@ -31,6 +31,7 @@ import random
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -102,9 +103,13 @@ def measure_vibration(sense, seconds=1.0, hz=50):
 def post(api_url, key, turbine_id, sensor_type, value):
     body = json.dumps({"turbine_id": turbine_id, "sensor_type": sensor_type, "value": value,
                        "timestamp": datetime.now(timezone.utc).isoformat()}).encode("utf-8")
+    # Kun http og https, så en file://-adresse i konfigurationen ikke kan bruges (Bandit B310)
+    if urllib.parse.urlsplit(api_url).scheme not in ("http", "https"):
+        raise ValueError(f"API_URL skal starte med http:// eller https://: {api_url}")
     req = urllib.request.Request(api_url.rstrip("/") + "/sensor-values", data=body, method="POST",
                                  headers={"Content-Type": "application/json", "X-API-Key": key})
-    with urllib.request.urlopen(req, timeout=10) as r:
+    # Bandit B310 er håndteret: skemaet er tjekket ovenfor
+    with urllib.request.urlopen(req, timeout=10) as r:  # nosec B310
         return json.load(r)
 
 

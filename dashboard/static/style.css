@@ -1,0 +1,203 @@
+/* Vindmølle-dashboardet. Mørkt tema, så det kan stå på en skærm hele dagen.
+   Farverne på events følger Event Stormingen: orange events, blå commands, lilla policies. */
+:root {
+  --bg: #0b1622;
+  --panel: #13233a;
+  --panel-2: #1a2f4b;
+  --line: #27415f;
+  --ink: #e8eef6;
+  --mute: #8fa3bb;
+  --accent: #4fb3ff;
+  --ok: #3ecf8e;
+  --warn: #ffb020;
+  --crit: #ff4d5e;
+  --event: #f5a04a;
+  --cmd: #8cc4f5;
+  --policy: #c9a5e3;
+  --tech: #6c8cff;
+  --gap: clamp(8px, 1.2vw, 20px);
+  --r: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: clamp(12px, 1.05vw, 22px);
+  overflow: hidden;
+}
+
+body { display: grid; grid-template-rows: auto 1fr auto; }
+
+/* ------------------------------------------------ top og bund */
+header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0.6em 1.2em;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #102036, var(--bg));
+}
+.park b { font-size: 1.35em; letter-spacing: 0.02em; }
+.park span { display: block; color: var(--mute); font-size: 0.85em; }
+#title { font-size: 1.5em; font-weight: 700; text-align: center; }
+.now { justify-self: end; display: flex; gap: 1.4em; align-items: baseline; }
+.now div { text-align: right; }
+.now small { display: block; color: var(--mute); font-size: 0.75em; }
+.now strong { font-size: 1.25em; font-variant-numeric: tabular-nums; }
+
+footer {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 1em;
+  align-items: center;
+  padding: 0.4em 1.2em 0.6em;
+  border-top: 1px solid var(--line);
+  color: var(--mute);
+  font-size: 0.8em;
+}
+#dots { display: flex; gap: 0.5em; }
+#dots button {
+  background: var(--panel);
+  color: var(--mute);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.25em 0.8em;
+  font: inherit;
+  cursor: pointer;
+}
+#dots button.on { background: var(--accent); color: #04121f; border-color: var(--accent); font-weight: 700; }
+#progress { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+#progress i { display: block; height: 100%; width: 0; background: var(--accent); }
+#sources { text-align: right; }
+
+/* ------------------------------------------------ skærme */
+main { position: relative; overflow: hidden; }
+.screen {
+  position: absolute;
+  inset: 0;
+  padding: var(--gap) 1.2em;
+  display: none;
+  gap: var(--gap);
+}
+.screen.on { display: grid; animation: ind 0.5s ease; }
+@keyframes ind { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 0.9em 1em;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.panel h3 { margin: 0 0 0.5em; font-size: 1em; color: var(--mute); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.lead { color: var(--mute); margin: 0; }
+.big { font-size: 2.6em; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+.mid { font-size: 1.5em; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mute { color: var(--mute); }
+.note { color: var(--mute); font-size: 0.85em; font-style: italic; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .crit { color: var(--crit); }
+svg { display: block; width: 100%; height: 100%; }
+svg text { fill: var(--mute); font-family: inherit; }
+
+/* 1 vejret */
+#s1 { grid-template-rows: auto 1fr auto; }
+#s1 .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--gap); min-height: 0; }
+.wcard { display: grid; grid-template-rows: auto auto 1fr auto; gap: 0.3em; }
+.wcard .who b { font-size: 1.15em; } .wcard .who span { display: block; color: var(--mute); font-size: 0.8em; }
+.wcard .arrow { min-height: 4em; padding: 0.4em 0; }
+.wcard .spark { height: 6em; }
+.spread { display: grid; grid-template-columns: auto 1fr; gap: 1.2em; align-items: center; }
+
+/* 2 parken */
+#s2 { grid-template-columns: 1.6fr 1fr; }
+#park svg .t circle.hub { fill: #dfe8f3; }
+#park svg .t .blades { transform-box: fill-box; transform-origin: center; animation: spin var(--spin, 4s) linear infinite; }
+#park svg .t.stop .blades { animation: none; }
+#park svg .t .ring { fill: none; stroke-width: 3; opacity: 0; }
+#park svg .t.fejl .ring, #park svg .t.alarm .ring { stroke: var(--crit); opacity: 1; animation: pulse 1s ease-in-out infinite; }
+#park svg .t.stoppet .ring { stroke: var(--mute); opacity: 1; }
+#park svg .t.tekniker .ring { stroke: var(--tech); opacity: 1; stroke-dasharray: 4 3; }
+#park svg .t.drift .ring { stroke: var(--ok); opacity: 1; }
+#park svg .t.real .ring { stroke: var(--crit); opacity: 1; stroke-width: 4; animation: pulse 0.8s ease-in-out infinite; }
+#park svg .t.real.hoj .ring { stroke: var(--warn); }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 50% { opacity: 0.25; } }
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { display: grid; grid-template-columns: 1.4em 1fr auto; gap: 0.5em; padding: 0.35em 0; border-bottom: 1px dashed var(--line); color: var(--mute); }
+.timeline li.done { color: var(--ink); }
+.timeline li.cur { color: var(--ink); font-weight: 700; }
+.timeline li i { width: 0.9em; height: 0.9em; border-radius: 50%; background: var(--line); margin-top: 0.25em; }
+.timeline li.done i { background: var(--ok); }
+.timeline li.cur i { background: var(--warn); animation: pulse 1s infinite; }
+.counts { display: flex; gap: 1.2em; flex-wrap: wrap; margin-bottom: 0.6em; }
+.counts div { font-size: 0.85em; color: var(--mute); }
+.counts b { display: block; font-size: 1.6em; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* 3 beregneren */
+#s3 { grid-template-columns: 1fr 1fr; }
+.gauge { height: 13em; }
+.verdict { font-size: 1.35em; font-weight: 700; margin: 0.4em 0; }
+.minitab { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.minitab td, .minitab th { padding: 0.25em 0.4em; border-bottom: 1px solid var(--line); text-align: right; }
+.minitab th { color: var(--mute); font-weight: 600; }
+.minitab td:first-child, .minitab th:first-child { text-align: left; }
+.minitab tr.hit td { color: var(--warn); font-weight: 700; }
+
+/* 4 strømpris */
+#s4 { grid-template-rows: 1fr auto; grid-template-columns: 1fr; }
+#s4 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); }
+
+/* 5 alarmcentralen */
+#s5 { grid-template-columns: 1fr 1.25fr; grid-template-rows: auto 1fr; }
+#s5 .flow { grid-column: 1 / -1; display: flex; gap: 0.5em; align-items: center; flex-wrap: wrap; }
+.sticky {
+  background: var(--event);
+  color: #2b1600;
+  padding: 0.4em 0.7em;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.85em;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.25);
+}
+.sticky small { display: block; font-weight: 600; opacity: 0.75; }
+.flow .arr { color: var(--mute); }
+.alarm {
+  border-left: 5px solid var(--warn);
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 0.5em 0.7em;
+  margin-bottom: 0.5em;
+}
+.alarm.kritisk { border-left-color: var(--crit); }
+.alarm .top { display: flex; justify-content: space-between; gap: 0.6em; }
+.badge { display: inline-block; padding: 0.05em 0.5em; border-radius: 4px; font-size: 0.8em; font-weight: 800; text-transform: uppercase; }
+.badge.kritisk { background: var(--crit); color: #fff; }
+.badge.hoj { background: var(--warn); color: #241400; }
+.feed { list-style: none; margin: 0; padding: 0; font-variant-numeric: tabular-nums; }
+.feed li { display: grid; grid-template-columns: 5.2em 12.5em 6em 1fr; gap: 0.6em; padding: 0.28em 0; border-bottom: 1px solid var(--line); align-items: center; }
+.feed li.new { animation: flash 1.6s ease; }
+@keyframes flash { from { background: rgba(245, 160, 74, 0.35); } to { background: transparent; } }
+.etype { font-weight: 700; font-size: 0.85em; padding: 0.1em 0.4em; border-radius: 3px; background: var(--event); color: #2b1600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.etype.SensorFaultSuspected { background: #6fa8ff; color: #04121f; }
+.etype.AlarmAcknowledged { background: var(--ok); color: #04121f; }
+.etype.NotificationFailed { background: var(--crit); color: #fff; }
+.etype.SensorValueReceived { background: #3a4f6b; color: var(--ink); }
+.pi { display: flex; gap: 1.2em; align-items: baseline; margin-bottom: 0.6em; }
+
+/* 6 serviceprognose */
+#s6 { grid-template-rows: auto 1fr auto; }
+.plist { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.plist th { color: var(--mute); text-align: left; font-weight: 600; padding: 0.3em 0.5em; border-bottom: 1px solid var(--line); }
+.plist td { padding: 0.25em 0.5em; border-bottom: 1px solid var(--line); }
+.plist td.spark { width: 34%; height: 3.4em; }
+.days { font-weight: 800; }
+
+.err { color: var(--crit); font-size: 0.85em; }
+.stale { color: var(--warn); font-size: 0.8em; }

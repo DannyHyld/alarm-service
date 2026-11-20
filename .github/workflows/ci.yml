@@ -34,8 +34,8 @@ jobs:
       - uses: actions/setup-python@v6
         with: {python-version: "3.12", cache: pip}
       - run: pip install -r requirements-dev.txt
-      - name: SAST med Bandit
-        run: bandit -r app -ll
+      - name: SAST med Bandit (API, Pi-program og dashboard)
+        run: bandit -r app pi dashboard -ll
       - name: Start MySQL med db/init.sql (samme compose-fil som udvikling)
         run: |
           # Engangs-adgangskoder kun til denne kørsel
